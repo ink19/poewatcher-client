@@ -7,6 +7,8 @@ import {
   Plus,
   Refresh,
   Setting,
+  VideoPause,
+  VideoPlay,
 } from '@element-plus/icons-vue';
 import { reactive, ref } from 'vue';
 import addButton from "./assets/add.svg";
@@ -15,8 +17,16 @@ import { Record } from "./Record";
 const clickState = ref(0)
 const RecordList = ref<Array<Record>>([])
 
-const serverHost = "127.0.0.1:3600"
 const addDialog = ref(false)
+
+const settingDialogState = ref(false)
+const settingInfo = reactive({
+  serverHost: "127.0.0.1:3600",
+})
+
+function concatUrl(action : string) {
+  return "http://" + settingInfo.serverHost + "/" + action;
+}
 
 function startClick() {
   clickState.value = 1 - clickState.value
@@ -30,7 +40,7 @@ const addInfo = reactive({
 })
 
 function RefreshRecordList() {
-  const url = ("http://" + serverHost + "/list")
+  const url = concatUrl("list")
   console.log("Request: " + url)
   GM_xmlhttpRequest({
     method:"GET",
@@ -50,7 +60,7 @@ function RefreshRecordList() {
 }
 
 async  function DeleteRecordRequest(recordID: number) {
-  const url = ("http://" + serverHost + "/delete?id=" + recordID)
+  const url = concatUrl("delete") + "?id=" + recordID
   console.log("Request: " + url)
   await GM_xmlhttpRequest({
     method:"GET",
@@ -67,9 +77,26 @@ async  function DeleteRecordRequest(recordID: number) {
   })
 }
 
+async function PauseRecordRequest(recordID: number) {
+  const url = concatUrl("pause") + "?id=" + recordID
+  console.log("Request: " + url)
+  await GM_xmlhttpRequest({
+    method:"GET",
+    url: url,
+    headers: {
+      "Accept": "text/xml"
+    },
+    onload: (response) => {
+      if (response.status != 200) {
+        console.log("Respone fail, err: " + response.status)
+        return
+      }
+    },
+  })
+}
 
 async function AddRecordRequest() {
-  const url = ("http://" + serverHost + "/add")
+  const url = concatUrl("add")
   console.log("Request: " + url)
   await GM_xmlhttpRequest({
     method:"POST",
@@ -115,9 +142,43 @@ async function OpenAddRecordDialog() {
   addDialog.value = true;
 }
 
+function OpenSettingDialog() {
+  settingDialogState.value = true;
+}
+
 async function DeleteRecord(id: number) {
   console.log(id)
   await DeleteRecordRequest(id)
+  RefreshRecordList()
+}
+
+async function PauseRecord(id: number) {
+  console.log(id)
+  await PauseRecordRequest(id)
+  RefreshRecordList()
+}
+
+async function StartRecordRequest(recordID: number) {
+  const url = concatUrl("start") + "?id=" + recordID
+  console.log("Request: " + url)
+  await GM_xmlhttpRequest({
+    method:"GET",
+    url: url,
+    headers: {
+      "Accept": "text/xml"
+    },
+    onload: (response) => {
+      if (response.status != 200) {
+        console.log("Respone fail, err: " + response.status)
+        return
+      }
+    },
+  })
+}
+
+async function StartRecord(id: number) {
+  console.log(id)
+  await StartRecordRequest(id)
   RefreshRecordList()
 }
 
@@ -135,18 +196,36 @@ async function DeleteRecord(id: number) {
       <el-col :span="24">
         <el-button type="primary" :icon="Plus" @click="OpenAddRecordDialog" circle> </el-button>
         <el-button type="warning" :icon="Refresh" circle @click="RefreshRecordList"></el-button>
-        <el-button type="info" :icon="Setting" circle></el-button>
+        <el-button type="info" :icon="Setting" circle @click="OpenSettingDialog"></el-button>
       </el-col>
     </el-row>
     <el-row>
       <el-table :data="RecordList">
         <el-table-column prop="id" label="ID"></el-table-column>
-        <el-table-column prop="name" label="Name"></el-table-column>
-        <el-table-column prop="season_id" label="SeasonID"></el-table-column>
-        <el-table-column prop="search_id" label="SearchID"></el-table-column>
-        <el-table-column prop="Operation" label="SearchType">
+        <el-table-column prop="name" label="别名"></el-table-column>
+        <el-table-column prop="season_id" label="赛季名"></el-table-column>
+        <el-table-column prop="search_id" label="搜索ID"></el-table-column>
+        <el-table-column prop="status" label="状态">
+          <template #default="scope">
+            <el-tag v-if="scope.row.status == 1" type="success">
+              运行中
+            </el-tag>
+            <el-tag v-if="scope.row.status == 2" type="info">
+              暂停中
+            </el-tag>
+            <el-tag v-if="scope.row.status == 3" type="warning">
+              异常
+            </el-tag>
+            <el-tag v-if="scope.row.status == 0" type="danger">
+              未知
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="Operation" label="操作">
           <template v-slot="scope">
-            <el-button :icon="Delete" type="danger" @click="DeleteRecord(scope.row.id)"></el-button>
+            <el-button :icon="Delete" type="danger" @click="DeleteRecord(scope.row.id)" circle></el-button>
+            <el-button :icon="VideoPause" type="info" @click="PauseRecord(scope.row.id)" circle v-if="scope.row.status == 1"></el-button>
+            <el-button :icon="VideoPlay" type="info" @click="StartRecord(scope.row.id)" circle v-if="scope.row.status == 2"></el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -173,6 +252,20 @@ async function DeleteRecord(id: number) {
           取消
         </el-button>
         <el-button @click="AddRecord" type="primary">
+          确认
+        </el-button>
+      </div>
+    </template>
+  </el-dialog>
+  <el-dialog v-model="settingDialogState" title="设置页">
+    <el-form :model="settingInfo" :inline="false" label-position="top">
+      <el-form-item label="服务名">
+        <el-input v-model="settingInfo.serverHost" clearable></el-input>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <div class="dialog-footer">
+        <el-button @click="settingDialogState = false" type="primary">
           确认
         </el-button>
       </div>

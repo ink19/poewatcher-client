@@ -11,7 +11,7 @@ export default defineConfig({
       userscript: {
         icon: 'https://vitejs.dev/logo.svg',
         namespace: 'npm/vite-plugin-monkey',
-        match: ['https://poe.game.qq.com/trade/*'],
+        match: ['https://poe.game.qq.com/trade/*', 'https://poe.game.qq.com/trade'],
       },
       build: {
         externalGlobals: {
